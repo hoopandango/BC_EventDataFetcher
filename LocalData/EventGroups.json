@@ -1,0 +1,40 @@
+[
+	{
+		"name": "Crazed Festival",
+		"stages":["The Crazed Cat","The Crazed Gross","The Crazed Fish","Cat Maniac","Gross Maniac","Fish Maniac","The Crazed Tank","The Crazed Cow","The Crazed Lizard","Tank Maniac","Cow Maniac","Lizard Maniac","The Crazed Axe","The Crazed Bird","The Crazed Titan","Axe Maniac","Bird Maniac","Titan Maniac"],
+		"visible": true
+	},{
+		"name": "Catfruit Festival",
+		"stages": ["Growing Yellow","Growing Blue","Growing Red","Growing Purple","Growing Green"],
+		"visible":true
+	},{
+		"name": "Items Sale",
+		"stages": ["Speed Up Sale","Treasure Radar Sale","Rich Cat Sale","Cat CPU Sale","Cat Jobs Sale","Sniper Cat Sale","XP Pack A Sale","XP Pack B Sale","XP Pack C Sale","XP Pack D Sale","XP Pack E Sale","Catamin A Sale","Catamin B Sale","Catamin C Sale"],
+		"visible":false
+	},
+	{
+		"name": "XP Festival",
+		"stages": ["XP Stage","XP Megablitz!","XP Colosseum","Merciless XP!"],
+		"visible":true
+	},{
+		"name": "Metal Festival",
+		"stages": ["Facing Danger","Siege of Hippoe!","Cat Ticket Chance!"],
+		"visible":true
+	},{
+		"name": "Gamatoto XP Harvest",
+		"stages": ["Gamatoto XP festival I","Gamatoto XP festival II","Gamatoto XP festival III"],
+		"visible":true
+	},{
+		"name": "Treasure Festival",
+		"stages": ["EoC Treasure Festival","ItF Treasure Festival","CotC Treasure Festival"],
+		"visible":true
+	},{
+		"name": "Builder Festival",
+		"stages": ["Cavern of Comets","Strait of Wings","Island of Ash"],
+		"visible":true
+	},{
+		"name": "Advent Festival",
+		"stages": ["River Styx","River Acheron","Dead on Debut","Dead by Encore","Blue Impact","Clionel Ascendant","Clionel Dominant","Deeply Dreaming","A Deeper Dream","King Wahwah's Revenge","King Wahwah's Return","Blue Impact","Queen's Coronation","Queen's Condemnation"],
+		"visible":true
+	}
+]
