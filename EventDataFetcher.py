@@ -16,14 +16,23 @@ with open(fl+'EventGroups.json', encoding='utf-8') as f:
 
 class UniversalParsers:
 	eventNames = {}
+	itemdata = []
+
+
 	with open(fl+'Events.csv', 'r', encoding='utf-8') as csvfile:
 		reader = csv.reader(csvfile, delimiter=",")
 		for row in reader:
 			eventNames[row[0]] = row[1][1:]
+	
 	with open(fl+'IDlist.csv', 'r', encoding='utf-8') as csvfile:
 		reader = csv.reader(csvfile, delimiter=",")
 		for row in reader:
 			eventNames[row[0]] = row[1]
+
+	with open(fl+'DropItemData.csv', 'r', encoding = 'utf-8', newline='') as csvfile:
+		reader = csv.reader(csvfile)
+		for row in reader:
+			itemdata.append(row)
 
 	@staticmethod
 	def fancyDate(dates):
@@ -35,13 +44,16 @@ class UniversalParsers:
 			return '- '+'~'.join([x.strftime('%d %b').lstrip('0') for x in dates])+': '
 
 	@staticmethod
-	def areValidDates(dates,filters):
+	def areValidDates(dates,filters,date0 = datetime.datetime.today()):
 		if len(filters) > 0:
-			if 'M' in filters:
+			if 'N' in filters:
+				if (dates[1] - dates[0]).days > 31 and not (dates[0]-date0).days >= 1:  # If event lasts longer than a month
+					return False
+			elif 'M' in filters:
 				if (dates[1] - dates[0]).days > 31:  # If event lasts longer than a month
 					return False
 			if 'Y' in filters:  
-				if (datetime.datetime.now()-dates[1]).days > 1:  # If event ended yesterday or earlier
+				if (date0-dates[1]).days >= 1:  # If event ended yesterday or earlier
 					return False
 		return True
 
@@ -66,6 +78,13 @@ class UniversalParsers:
 			return name
 		except:
 			return "Unknown"
+	
+	@classmethod
+	def getItem(cls,ID):
+		for row in cls.itemdata:
+			if int(row[0]) == int(ID):
+				return row[1]
+		return 'Unknown'
 
 class GatyaParsers(UniversalParsers):
 	def __init__():
@@ -76,8 +95,12 @@ class GatyaParsers(UniversalParsers):
 	default_units = {"G":"Cutter Cat","N":"Neneko","R":"Freshman Cat Jobs"}
 	default_units = {int(cat.getUnitCode(y,6)[0]/3):x for (x,y) in default_units.items()}
 
+	guessing_units = {"Best of the Best":"Li'l Valkyrie","Neo Best of the Best":"Li'l Valkyrie Dark","DynastyFest":"Tyrant Cat"}
+	guessing_units = {int(cat.getUnitCode(y,6)[0]/3):x for (x,y) in guessing_units.items()}
+
 	gatyaInfo = []
 	gatyaNames = []
+	gib = []
 
 	with open(fl+'GatyaData.csv', encoding='utf-8') as f:
 		rows = csv.reader(f)
@@ -88,6 +111,12 @@ class GatyaParsers(UniversalParsers):
 		f = f.read()
 		y = json.loads(f)
 		gatyaNames = y
+	
+	with open(fl+'Gatyaitembuy.csv', encoding = 'utf-8', newline='') as csvfile:
+		reader = csv.DictReader(csvfile)
+		for row in reader:
+			gib.append(row)
+
 
 	@staticmethod
 	def getpage(banner):
@@ -120,37 +149,69 @@ class GatyaParsers(UniversalParsers):
 		return G
 	
 	@classmethod
-	def getLocalGatyaName(cls,ID):
-		title = cls.gatyaNames[('000'+str(ID))[-3:]]
-		title = title.replace('Rare Cat Capsule Event','')
-		title = title.replace('Collab Capsules','')
-		title = title.strip().title()
+	def guessGatyaName(cls,ID):
+		toret = None
+		for i in cls.guessing_units:
+			if str(i) in cls.gatyaInfo[int(ID)]:
+				toret = cls.guessing_units[i]
+		if toret:
+			return toret + ' (Guessed)'
+		raise ValueError('Not Found')
+
+	@classmethod
+	def getGatyaName(cls,ID):
+		def fetchGatyaName(ID):
+			'''  Reading from Local Data, not using because this has untranslated gatya banners and Unknown Sets, but might improve this later.
+			try:
+				return cls.gatyaNames[str(ID).zfill(3)] if not 'Set Name Unknown' == cls.gatyaNames[str(ID).zfill(3)] else 'Untitled'
+			except:
+				pass
+			'''
+			try:  # Get Name from PONOS site
+				gatyaurl = 'http://ponos.s3.dualstack.ap-northeast-1.amazonaws.com/information/appli/battlecats/gacha/rare/en/R%i.html'%(int(ID))
+				uf = urllib.request.urlopen(gatyaurl)
+				tex = uf.read().decode("utf8")
+				uf.close()
+				title = html.unescape(re.search('<h2>(.*)</h2>', tex).group(1))
+				return re.sub('<span.*?</span>', '', title, flags=re.DOTALL)
+			except:
+				pass
+			'''  Can keep this, but it's slower than PONOS site.
+			try:	# Get Name from feanor site 
+				gatyaurl = 'https://thanksfeanor.pythonanywhere.com/gatya/%i'%(int(ID))
+				uf = urllib.request.urlopen(gatyaurl)
+				tex = uf.read().decode("utf8")
+				uf.close()
+				name = html.unescape(re.search('<h1 style="text-align: center;">(.*)</h1>', tex).group(1))
+				if name != 'Set Name Unknown':
+					return name
+			except:
+				pass
+			'''
+			try:  # Guess Gatya name
+				return cls.guessGatyaName(ID) 
+			except:
+				pass
+
+			return 'Untitled'
+		
+		title = fetchGatyaName(ID)
+		title = title.replace('Rare Cat Capsule Event','').replace('Collab Capsules','').strip().title()
 		if title in cls.aliases.keys():
 			title = cls.aliases[title]
 		return title
 
 	@classmethod
-	def getGatyaName(cls,ID):
-		if int(ID) > 0:
+	def printGatyaUnitsIn(cls,ID):
+		x = cls.gatyaInfo[int(ID)]
+		for i in x:
 			try:
-				gatyaurl = 'http://ponos.s3.dualstack.ap-northeast-1.amazonaws.com/information/appli/battlecats/gacha/rare/en/R%i.html'%(int(ID))
-				uf = urllib.request.urlopen(gatyaurl)
-				mybytes = uf.read()
-				tex = mybytes.decode("utf8")
-				uf.close()
-				
-				title = html.unescape(re.search('<h2>(.*)</h2>', tex).group(1))
-				#title = re.search('<h2>(.*)</h2>', tex).group(1)
-				title = re.sub('<span.*?</span>', '', title, flags=re.DOTALL)
-				title = title.replace('Rare Cat Capsule Event','')
-				title = title.replace('Collab Capsules','')
-				title = title.strip().title()
-				if title in cls.aliases.keys():
-					title = cls.aliases[title]
-				return title
+				name = cat.getnamebycode(3*int(i))
+				if name:
+					print(name,end=', ')
 			except:
-				return 'Untitled'
-		return 'Untitled'
+				pass
+		print()
 
 	@classmethod
 	def getExclusives(cls,ID):
@@ -164,8 +225,14 @@ class GatyaParsers(UniversalParsers):
 			return []
 
 	@classmethod
+	def severToItem(cls,ID):
+		for row in cls.gib:
+			if int(row['SeverID']) == int(ID):
+				return int(row['stageDropItemID'])
+		return -1
+
+	@classmethod
 	def getExtras(cls,data):
-		return []
 		toret = []
 		extras = int(cls.getValueAtOffset(data,13))
 		severID = (extras >> 4) & 1023
@@ -175,7 +242,7 @@ class GatyaParsers(UniversalParsers):
 		if extras & 16384:
 			toret.append('P')  # Platinum Shard
 		if not extras & 8:
-			return  # No item drops
+			return toret # No item drops
 		if cls.getItem(itemID) == 'Lucky Ticket':
 			toret.append('L')  # Has lucky ticket
 		return toret
@@ -335,6 +402,7 @@ class StageParsers(UniversalParsers):
 class ItemParsers(UniversalParsers):
 	def __init__():
 		UniversalParsers.__init__()
+	
 
 class UniversalFetcher:
 	def __init__(self,v,f):
@@ -381,6 +449,14 @@ class UniversalFetcher:
 			group['dates'][1] = max(group['dates'][1],event['dates'][1])
 			group['dates'][0] = min(group['dates'][0],event['dates'][0])
 
+		def groupBarons(events):			
+			for i,event in enumerate(events):
+				if '(Baron)' in event['name']:
+					for j,e in enumerate(events[i+1:]):
+						if e['name'].replace('!','') == event['name'].replace('!',''):
+							events.insert(i+1,events.pop(i+j+1))
+							break
+					
 		def groupEvents():
 			for event in self.refinedStages:
 				buffer = []
@@ -410,16 +486,18 @@ class UniversalFetcher:
 				flushGroup(groupname)
 			finalEvents.sort(key=itemgetter('dates'))
 			sales.sort(key=itemgetter('dates'))
+			groupBarons(finalEvents)
 			self.finalStages = finalEvents
 			self.sales = sales
 		groupEvents()
 
 class GatyaFetcher(UniversalFetcher):
-	def __init__(self,v='en',f=['M']):
+	def __init__(self,v='en',f=['M'],d0 = datetime.datetime.today()):
 		UniversalFetcher.__init__(self,v,f)
 		self.rawGatya = []
 		self.refinedGatya = []
-			
+		self.date0 = d0
+
 	def fetchRawData(self):		
 		url = 'https://bc-seek.godfat.org/seek/%s/gatya.tsv'%(self.ver)
 		response = urllib.request.urlopen(url)
@@ -433,7 +511,7 @@ class GatyaFetcher(UniversalFetcher):
 	def readRawData(self):
 		for banner in self.rawGatya:
 			dates = GatyaParsers.getdates(banner)
-			if not GatyaParsers.areValidDates(dates,self.filters):
+			if not GatyaParsers.areValidDates(dates,self.filters,self.date0):
 				continue
 			ID = GatyaParsers.getValueAtOffset(banner, 10)
 			name =  GatyaParsers.getGatyaName(ID)
@@ -453,7 +531,7 @@ class GatyaFetcher(UniversalFetcher):
 				})
 
 	def printGatya(self):
-		print('```\nGatya:')
+		print('```Gatya:')
 		for event in self.refinedGatya:
 			if 'G' in event['exclusives']:
 				event['exclusives'].remove('G')
@@ -471,12 +549,13 @@ class GatyaFetcher(UniversalFetcher):
 		print('```')
 
 class StageFetcher(UniversalFetcher):
-	def __init__(self,v='en',f=['M']):
+	def __init__(self,v='en',f=['M'], d0 = datetime.datetime.today()):
 		UniversalFetcher.__init__(self,v,f)
 		self.rawStages = []
 		self.refinedStages = []
 		self.finalStages = []
 		self.sales = []
+		self.date0 = d0
 
 	def fetchRawData(self):		
 		url = 'https://bc-seek.godfat.org/seek/%s/sale.tsv'%(self.ver)
@@ -490,7 +569,7 @@ class StageFetcher(UniversalFetcher):
 
 	def readRawData(self):
 		for data in self.rawStages:
-			if not StageParsers.areValidDates(StageParsers.getdates(data),self.filters):
+			if not StageParsers.areValidDates(StageParsers.getdates(data),self.filters,self.date0):
 				continue
 			#permanent - just ID - all day
 			if data[7] == '0':
@@ -550,27 +629,26 @@ class StageFetcher(UniversalFetcher):
 		if saledata == 'x':
 			saledata = self.sales
 
-		print('```\nEvents:')
+		print('```Events:')
 		for group in stagedata:
-			try:
-				print (StageParsers.fancyDate(group['dates'])+group['name'])
-			except:
-				print (group)
+			print (StageParsers.fancyDate(group['dates'])+group['name'])
 		print('```')
 
-		print('```\nSales:')
+		print('```Sales:')
 		for group in saledata:
 			print (StageParsers.fancyDate(group['dates'])+group['name'])
 		print('```')
 
 class ItemFetcher(UniversalFetcher):
-	def __init__(self,v='en',f=['M']):
+	def __init__(self,v='en',f=['M'],d0 = datetime.datetime.today()):
 		UniversalFetcher.__init__(self,v,f)
 		self.rawData = []
 		self.refinedData = []
 		self.refinedStages = []
 		self.finalStages = []
+		self.refinedItems = []
 		self.sales = []
+		self.date0 = d0
 
 	def fetchRawData(self):		
 		url = 'https://bc-seek.godfat.org/seek/%s/item.tsv'%(self.ver)
@@ -584,16 +662,47 @@ class ItemFetcher(UniversalFetcher):
 
 	def readRawData(self):
 		for data in self.rawData:
+			if not ItemParsers.areValidDates(ItemParsers.getdates(data),self.filters,self.date0):
+					continue
 			if data[7] == '0':
 				dic = {
-					"dates": ItemParsers.getdates(data),
-					"versions": ItemParsers.getversions(data),
-					"IDs": [data[9]]
+					'dates': ItemParsers.getdates(data),
+					'versions': ItemParsers.getversions(data),
+					'IDs': [data[9]],
+					'qty': data[10],
+					'text':data[12],
+					'recurring': int('0'+data[15])
 				}
 				self.refinedData.append(dic)
-				if ItemParsers.areValidDates(dic['dates'],self.filters):
-					self.refinedStages.append(dic)
+				self.refinedStages.append(dic)
+			for ID in dic['IDs']:
+				name = ItemParsers.getItem(GatyaParsers.severToItem(ID))
+				if name != 'Unknown':
+					x = dic.copy()
+					x['name'] = name
+					self.refinedItems.append(x)
 
 	def getStageData(self):
 		return (self.finalStages,self.sales)
 	
+	def printItemData(self):
+		print('```Items:')
+		for pt,item in enumerate(self.refinedItems):
+			if item['name'] in ['Leadership','Rare Ticket'] and '22' in item['text']:
+				for ps, i in enumerate(self.refinedItems[pt+1:]):
+					if i['name'] in ['Leadership','Rare Ticket'] and '22' in item['text']:
+						self.refinedItems.pop(ps+pt+1)
+						self.refinedItems[pt]['name'] += f' + {i["name"]} (Meow Meow Day)'
+						break
+			elif item['name'] == 'Rare Ticket':
+				v = item['versions'][0][0:2] +'.'+ str(int(item['versions'][0][2:4]))
+				if v in item['text']:
+					self.refinedItems[pt]['name'] += f' (for {v} Update)'
+
+		for item in self.refinedItems:
+			qty = (' x '+item['qty']) if item['qty'] != '1' else ''
+			if item['name'] in ['Cat Food','Rare Ticket']  and (item['dates'][1]-item['dates'][0]).days >= 2:
+				qty += ' (Daily)' if item['recurring'] else ' (Only Once)'
+			print(ItemParsers.fancyDate(item['dates'])+item['name']+qty)
+		print('```')
+

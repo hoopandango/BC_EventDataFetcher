@@ -44,3 +44,12 @@ class Catunits:
 			return [closest, min(dss), 'original']  # all of the closest and the distance of the closests
 		else:  # custom names were better
 			return [customnames[1], customnames[0], 'custom']  # the best matches of all custom names
+
+	@classmethod
+	def getnamebycode(self, id):
+		returned = None
+		try:
+			returned = self._cats.iloc[id][98]
+		except IndexError:
+			pass
+		return returned
