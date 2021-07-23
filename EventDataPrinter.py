@@ -2,20 +2,17 @@ from EventDataFetcher import GatyaFetcher,StageFetcher,ItemFetcher
 from datetime import datetime as dt
 import time
 
-def timetodo(x):
-  start_time = time.time()
-  for i in range(2):
-    x()
-  end_time = time.time()
-  print(f'Time Taken by {x}= ',end_time-start_time)
+lg = 'jp'
+fl = 'NY'
 
 lg = input('Enter Version (en/kr/jp/tw)\n')
 if lg not in ['en','kr','jp','tw']:
-  lg = 'en'
+  pass
 
 # M = ignore all events lasting longer than a month
 # Y = ignore all events that ended yesterday or earlier
-# To enter multiple filters just type all their characters (e.g. MY)
+# N = basically N but better
+# To enter multiple filters just type all their characters (e.g. NY)
 filters = list(input('Enter Filters (Enter NY if you don\'t know what this is)\n'))
 fl = []
 for ch in 'MYN':
@@ -29,11 +26,11 @@ except:
   print('Date entered invalid or left blank. Using today as the pivot date.')
   gf,sf,itf = GatyaFetcher(lg,fl),StageFetcher(lg,fl),ItemFetcher(lg,fl)
 
-'''
+
 gf.fetchRawData()
 gf.readRawData()
 gf.printGatya()
-'''
+
 sf.fetchRawData()
 sf.readRawData()
 sf.groupData()
@@ -46,5 +43,7 @@ s2 = itf.getStageData()
 
 sf.printStages(s1[0]+s2[0],s1[1]+s2[1])
 itf.printItemData()
+
+sf.printFestivalData()
 
 input()

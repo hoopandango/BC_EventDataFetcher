@@ -6,8 +6,10 @@ import regex as re
 import datetime
 from Catbot import Catunits as cat
 from operator import itemgetter
+import os
 
 fl = 'LocalData\\' # Set to '' if keeping data files in same folder
+groupable_events = ['Seeing Red','Tag Arena','Dark Descent','Duel','(Baron)']
 
 with open(fl+'EventGroups.json', encoding='utf-8') as f:
 	f = f.read()
@@ -35,25 +37,37 @@ class UniversalParsers:
 			itemdata.append(row)
 
 	@staticmethod
-	def fancyDate(dates):
-		if dates[0].month == dates[1].month:
-			if dates[0].day == dates[1].day:
-				return '- '+dates[1].strftime('%d %b').lstrip('0')+': '
-			return  '- '+'~'.join([dates[0].strftime('%d').lstrip('0'),dates[1].strftime('%d %b').lstrip('0')])+': '
-		else:
-			return '- '+'~'.join([x.strftime('%d %b').lstrip('0') for x in dates])+': '
+	def fancyDate(datesall):
+		toret = "- "
+		for dates in zip(datesall[0::2],datesall[1::2]):
+
+			if (dates[1] - dates[0]).days > 365:   # Forever Events
+				toret += f"{dates[0].strftime('%d %b').lstrip('0')}~..."
+
+			elif dates[0].month == dates[1].month:   # Events that don't cross months
+				if dates[0].day == dates[1].day:   # Events that only last one day or less
+					toret += dates[1].strftime('%d %b').lstrip('0')
+				else:
+					toret += '~'.join([dates[0].strftime('%d').lstrip('0'),dates[1].strftime('%d %b').lstrip('0')])
+
+			else:  # Events that cross months
+				toret += '~'.join([x.strftime('%d %b').lstrip('0') for x in dates])
+		
+			toret += ', '
+
+		return toret[:-2] + ": "
 
 	@staticmethod
 	def areValidDates(dates,filters,date0 = datetime.datetime.today()):
 		if len(filters) > 0:
 			if 'N' in filters:
-				if (dates[1] - dates[0]).days > 31 and not (dates[0]-date0).days >= 1:  # If event lasts longer than a month
+				if ((dates[1] - dates[0]).days > 31 and not (dates[0]-date0).days >= 1):
 					return False
 			elif 'M' in filters:
 				if (dates[1] - dates[0]).days > 31:  # If event lasts longer than a month
 					return False
 			if 'Y' in filters:  
-				if (date0-dates[1]).days >= 1:  # If event ended yesterday or earlier
+				if (date0-dates[0]).days > -1:  # If event started today or earlier
 					return False
 		return True
 
@@ -448,15 +462,7 @@ class UniversalFetcher:
 			group['events'].append(event['name'])
 			group['dates'][1] = max(group['dates'][1],event['dates'][1])
 			group['dates'][0] = min(group['dates'][0],event['dates'][0])
-
-		def groupBarons(events):			
-			for i,event in enumerate(events):
-				if '(Baron)' in event['name']:
-					for j,e in enumerate(events[i+1:]):
-						if e['name'].replace('!','') == event['name'].replace('!',''):
-							events.insert(i+1,events.pop(i+j+1))
-							break
-					
+	
 		def groupEvents():
 			for event in self.refinedStages:
 				buffer = []
@@ -484,9 +490,6 @@ class UniversalFetcher:
 					pushEventOrSale(event)
 			for groupname in group_history_2.copy():
 				flushGroup(groupname)
-			finalEvents.sort(key=itemgetter('dates'))
-			sales.sort(key=itemgetter('dates'))
-			groupBarons(finalEvents)
 			self.finalStages = finalEvents
 			self.sales = sales
 		groupEvents()
@@ -498,7 +501,32 @@ class GatyaFetcher(UniversalFetcher):
 		self.refinedGatya = []
 		self.date0 = d0
 
+	def fetchLocalData(self,date):
+		d0 = int(date.strftime('%Y%m%d')+'000000')
+		mypath = 'Archive\\en\\gatya\\'
+		arr = os.listdir(mypath)
+		fname = 0
+		for file in arr:
+			f = int(file.replace('.tsv',''))
+			if f - d0 > 0:
+				break
+			fname = f
+			
+		with open(mypath+str(fname)+'.tsv','r', encoding='utf-8') as response:
+			lines = response.readlines()
+		cr = csv.reader(lines, delimiter="\t")
+		for row in cr:
+			if len(row) > 1:
+				self.rawGatya.append(row)
+				if len(row) > 1 and row[1] == "0":
+					row[1] = "0000"
+				if len(row) > 3 and row[3] == "0":
+					row[3] = "0000"
+
 	def fetchRawData(self):		
+		if (datetime.datetime.today() - self.date0).days > 60:
+			self.fetchLocalData(self.date0)
+			return
 		url = 'https://bc-seek.godfat.org/seek/%s/gatya.tsv'%(self.ver)
 		response = urllib.request.urlopen(url)
 		lines = [l.decode('utf-8') for l in response.readlines()]
@@ -522,7 +550,7 @@ class GatyaFetcher(UniversalFetcher):
 				"page": GatyaParsers.getpage(banner), #Is it on rare gacha page or silver ticket page
 				"slot": banner[9], # affects how to read rest of data
 				"Banner_ID": ID, #The ID in the relevant GatyaDataSet csv
-				"Rates": GatyaParsers.getGatyaRates(banner), #[Normal, Rare, Super, Uber, Legend]
+				"rates": GatyaParsers.getGatyaRates(banner), #[Normal, Rare, Super, Uber, Legend]
 				"Guarantee": GatyaParsers.getGatyaG(banner), #[Normal, Rare, Super, Uber, Legend] - (0:no,1:yes)
 				"Text": GatyaParsers.getValueAtOffset(banner, 24),
 				"name":name,
@@ -535,8 +563,9 @@ class GatyaFetcher(UniversalFetcher):
 		for event in self.refinedGatya:
 			if 'G' in event['exclusives']:
 				event['exclusives'].remove('G')
-
-			if event['page'] in ('Rare Capsule') and int(event['Banner_ID']) > 0:
+			if event['rates'][3] in ('10000','9500'):  # Platinum / Legend Ticket Event
+				continue
+			if event['page'] in ('Rare Capsule','Event Capsule') and int(event['Banner_ID']) > 0:
 				gtd = ' (Guaranteed)' if event['Guarantee'][3] == '1' else ''
 				gtd += ' (Step-Up)' if 'S' in event['extras'] else ''
 				gtd += ' (Lucky Tickets)' if 'L' in event['extras'] else ''
@@ -557,7 +586,32 @@ class StageFetcher(UniversalFetcher):
 		self.sales = []
 		self.date0 = d0
 
+	def fetchLocalData(self,date):
+		d0 = int(date.strftime('%Y%m%d')+'000000')
+		mypath = 'Archive\\en\\sale\\'
+		arr = os.listdir(mypath)
+		fname = 0
+		for file in arr:
+			f = int(file.replace('.tsv',''))
+			if f - d0 > 0:
+				break
+			fname = f
+			
+		with open(mypath+str(fname)+'.tsv','r', encoding='utf-8') as response:
+			lines = response.readlines()
+		cr = csv.reader(lines, delimiter="\t")
+		for row in cr:
+			if len(row) > 1:
+				self.rawStages.append(row)
+				if len(row) > 1 and row[1] == "0":
+					row[1] = "0000"
+				if len(row) > 3 and row[3] == "0":
+					row[3] = "0000"
+
 	def fetchRawData(self):		
+		if (datetime.datetime.today() - self.date0).days > 60:
+			self.fetchLocalData(self.date0)
+			return
 		url = 'https://bc-seek.godfat.org/seek/%s/sale.tsv'%(self.ver)
 		response = urllib.request.urlopen(url)
 		lines = [l.decode('utf-8') for l in response.readlines()]
@@ -565,19 +619,20 @@ class StageFetcher(UniversalFetcher):
 		for row in cr:
 			if len(row) > 1:
 				self.rawStages.append(row)
-				row[1],row[3] = (row[1]+'000')[0:3],(row[3]+'000')[0:3]
+				row[1],row[3] = (row[1]+'000')[0:4],(row[3]+'000')[0:4]
 
 	def readRawData(self):
 		for data in self.rawStages:
 			if not StageParsers.areValidDates(StageParsers.getdates(data),self.filters,self.date0):
 				continue
+			
 			#permanent - just ID - all day
 			if data[7] == '0':
 				self.refinedStages.append({
 					"dates": StageParsers.getdates(data),
 					"versions": StageParsers.getversions(data),
 					"schedule": "permanent", 
-					"IDs": data[9:9+int(data[8])]
+					"IDs": [int(x) for x in data[9:9+int(data[8])]]
 					})
 			#Yearly repeat XY - starts and ends at a date+time
 			elif data[8] != '0':
@@ -623,11 +678,73 @@ class StageFetcher(UniversalFetcher):
 	def getStageData(self):
 		return (self.finalStages,self.sales)
 
+	def printFestivalData(self):
+		IDlog = []
+		for event in self.refinedStages:
+			for ID in event['IDs']:
+				if event['schedule'] == 'permanent' and ID not in (1028,1059,1124,1155,1078,1007,1006):
+					continue
+				#print(event)
+				if ID in IDlog:
+						continue
+				
+				print(f'```{StageParsers.getEventName(ID)}')
+
+				if event['schedule'] == 'permanent':
+					IDlog.append(ID)
+					for e in [x for x in self.refinedStages if ID in x['IDs']]:
+						print(f"- {e['dates'][0].strftime('%d')}: {e['dates'][0].strftime('%I%p')} ~ {e['dates'][1].strftime('%I%p')}")
+					print('```')
+					
+				else:
+					for setting in event['data']:
+						if event['schedule'] == 'monthly':
+							print('- Date '+'/'.join(setting['dates'])+ ': ' + f"{setting['times'][0]['start'].strftime('%I%p').lstrip('0')} ~ {setting['times'][0]['end'].strftime('%I%p').lstrip('0')}")
+						elif event['schedule'] == 'daily':
+							for time in setting['times']:
+								print(f"{StageParsers.fancyDate(event['dates'])}{time['start'].strftime('%I%p').lstrip('0')} ~ {time['end'].strftime('%I%p').lstrip('0')}")
+						else:
+							print(event)
+					print('```')
+
 	def printStages(self, stagedata = 'x',saledata = 'x'):
+		def groupBaronsAndOtherStuff(events):			
+			for i,event in enumerate(events):
+				if any([x in event['name'] for x in groupable_events]):
+					for j,e in enumerate(events[i+1:]):
+						# Can't use two words because Duel stages
+						if e['name'].split(' ')[0] == event['name'].split(' ')[0] and e['dates'][1] == event['dates'][1]:   # If they share the same first word and end on the same date
+							events.insert(i+1,events.pop(i+j+1))   # Put them together
+							break
+
+				
+		def dupeCheck(events):
+			for i,event in enumerate(events):
+				if event['name'] == 'Catfood Discount Reset (30)':
+					for j,e in enumerate(events[i+1:]):
+						if e['name'] == 'Catfood Discount Reset (750)':
+							events[i]['name'] = 'Catfood Discount Reset (30/750)'
+							events.pop(i+j+1)
+							break
+				for j,e in enumerate(events[i+1:]):
+					try:
+						if e['IDs'] == event['IDs']:
+							events[i]['dates'].extend(e['dates'])
+							events.pop(i+j+1)
+					except:
+						pass  # Ignore events that are already grouped like Festivals
+				
+				
 		if stagedata == 'x':
 			stagedata = self.finalStages
 		if saledata == 'x':
 			saledata = self.sales
+
+		stagedata.sort(key=itemgetter('dates'))
+		saledata.sort(key=itemgetter('dates'))
+		groupBaronsAndOtherStuff(stagedata)
+		dupeCheck(stagedata)
+		dupeCheck(saledata)
 
 		print('```Events:')
 		for group in stagedata:
@@ -651,6 +768,9 @@ class ItemFetcher(UniversalFetcher):
 		self.date0 = d0
 
 	def fetchRawData(self):		
+		if (datetime.datetime.today() - self.date0).days > 60:
+			self.fetchLocalData(self.date0)
+			return
 		url = 'https://bc-seek.godfat.org/seek/%s/item.tsv'%(self.ver)
 		response = urllib.request.urlopen(url)
 		lines = [l.decode('utf-8') for l in response.readlines()]
@@ -660,10 +780,32 @@ class ItemFetcher(UniversalFetcher):
 				self.rawData.append(row)
 				row[1],row[3] = (row[1]+'000')[0:3],(row[3]+'000')[0:3]
 
+	def fetchLocalData(self,date):
+		d0 = int(date.strftime('%Y%m%d')+'000000')
+		mypath = 'Archive\\en\\item\\'
+		arr = os.listdir(mypath)
+		fname = 0
+		for file in arr:
+			f = int(file.replace('.tsv',''))
+			if f - d0 > 0:
+				break
+			fname = f
+			
+		with open(mypath+str(fname)+'.tsv','r', encoding='utf-8') as response:
+			lines = response.readlines()
+		cr = csv.reader(lines, delimiter="\t")
+		for row in cr:
+			if len(row) > 1:
+				self.rawData.append(row)
+				if len(row) > 1 and row[1] == "0":
+					row[1] = "0000"
+				if len(row) > 3 and row[3] == "0":
+					row[3] = "0000"
+
 	def readRawData(self):
 		for data in self.rawData:
 			if not ItemParsers.areValidDates(ItemParsers.getdates(data),self.filters,self.date0):
-					continue
+				continue
 			if data[7] == '0':
 				dic = {
 					'dates': ItemParsers.getdates(data),
@@ -676,6 +818,8 @@ class ItemFetcher(UniversalFetcher):
 				self.refinedData.append(dic)
 				self.refinedStages.append(dic)
 			for ID in dic['IDs']:
+				if 900 <= int(ID) <= 999:  # Login Stamp
+					pass
 				name = ItemParsers.getItem(GatyaParsers.severToItem(ID))
 				if name != 'Unknown':
 					x = dic.copy()
@@ -705,4 +849,3 @@ class ItemFetcher(UniversalFetcher):
 				qty += ' (Daily)' if item['recurring'] else ' (Only Once)'
 			print(ItemParsers.fancyDate(item['dates'])+item['name']+qty)
 		print('```')
-
