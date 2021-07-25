@@ -1,6 +1,7 @@
 from EventDataFetcher import GatyaFetcher,StageFetcher,ItemFetcher
 from datetime import datetime as dt
 import time
+from pprint import pprint # Please use this, whoever from the future is trying to debug this spaghetti.
 
 lg = 'jp'
 fl = 'NY'
@@ -35,6 +36,7 @@ sf.fetchRawData()
 sf.readRawData()
 sf.groupData()
 s1 = sf.getStageData()
+#print(sf.finalStages)
 
 itf.fetchRawData()
 itf.readRawData()
@@ -42,8 +44,15 @@ itf.groupData()
 s2 = itf.getStageData()
 
 sf.printStages(s1[0]+s2[0],s1[1]+s2[1])
+
 itf.printItemData()
 
+"""
+sf.fetchRawData()
+sf.readRawData()
+sf.groupData()
+#pprint(sf.refinedStages)
+"""
 sf.printFestivalData()
 
 input()
